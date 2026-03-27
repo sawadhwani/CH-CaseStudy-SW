@@ -528,7 +528,8 @@ def main():
                   delta=fmt_rev(opp["medicaid_rev"]), delta_color="off")
         o2.metric("Commercial Patients", fmt_pop(opp["commercial_pop"]),
                   delta=fmt_rev(opp["commercial_rev"]), delta_color="off")
-        o3.metric("Total Revenue Opp",   fmt_rev(opp["total_rev"]))
+        o3.metric("Total Revenue Opp",   fmt_rev(opp["total_rev"]),
+                  delta=fmt_pop(opp["addressable"]) + " addressable pts", delta_color="off")
         st.caption(
             "Model: adult pop × state SMI rate (SAMHSA 2023) × 15% IOP-eligible. "
             "Revenue: $12K/Medicaid · $18K/commercial patient."
