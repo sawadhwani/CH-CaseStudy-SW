@@ -180,19 +180,35 @@ def main():
 
     st.divider()
 
+    # ── Session state for selected state ──
+    if "selected_abbr" not in st.session_state:
+        st.session_state["selected_abbr"] = "CO"
+
     # ── Main layout ──
     col_map, col_brief = st.columns([1.5, 1], gap="large")
 
     with col_map:
         state_names = sorted(df["name"].tolist())
-        default_idx = state_names.index("Colorado")
-        selected_name = st.selectbox("State", state_names, index=default_idx,
+        current_name = STATE_DATA[st.session_state["selected_abbr"]]["name"]
+
+        selected_name = st.selectbox("State", state_names,
+                                     index=state_names.index(current_name),
                                      label_visibility="collapsed")
         selected_abbr = df.loc[df["name"] == selected_name, "abbr"].values[0]
+        st.session_state["selected_abbr"] = selected_abbr
 
         fig = build_map(df, selected_abbr)
-        st.plotly_chart(fig, use_container_width=True)
-        st.caption("Green = High Favorability (7–10)  |  Yellow = Moderate (4–6)  |  Red = Low (1–3)  |  White outline = selected state")
+        event = st.plotly_chart(fig, use_container_width=True,
+                                on_select="rerun", key="choropleth_map")
+
+        # Handle map click
+        if event and event.selection and event.selection.get("points"):
+            clicked = event.selection["points"][0].get("location")
+            if clicked and clicked in STATE_DATA and clicked != selected_abbr:
+                st.session_state["selected_abbr"] = clicked
+                st.rerun()
+
+        st.caption("Click a state or use the dropdown  |  Green = High (7–10)  |  Yellow = Moderate (4–6)  |  Red = Low (1–3)")
 
     with col_brief:
         d = STATE_DATA[selected_abbr]
@@ -201,13 +217,11 @@ def main():
 
         st.subheader(f"{selected_name}  {score_icon}")
         st.markdown(f"""
-| | |
-|---|---|
-| **Favorability Score** | {score}/10 |
-| **Medicaid** | {d['medicaid_status']} |
-| **CH Active** | {'Yes' if d['charlie_health_active'] else 'No'} |
-| **CH Medicaid Reimbursement** | {'Yes' if d['medicaid_covered'] else 'No'} |
-| **Telehealth Policy** | {d['telehealth_policy']} |
+**Favorability Score:** {score}/10
+**Medicaid:** {d['medicaid_status']}
+**CH Active:** {'Yes' if d['charlie_health_active'] else 'No'}
+**CH Medicaid Reimbursement:** {'Yes' if d['medicaid_covered'] else 'No'}
+**Telehealth Policy:** {d['telehealth_policy']}
 """)
 
         st.divider()
