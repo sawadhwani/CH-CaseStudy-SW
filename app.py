@@ -27,12 +27,21 @@ st.markdown("""
     [data-testid="stMetricLabel"] { color: white !important; opacity: 0.85; }
     [data-testid="stMetricValue"] { color: white !important; }
 
-    /* Stakeholder tracker — header row: CH blue + white text */
+    /* Stakeholder tracker — white background throughout */
+    [data-testid="stDataEditor"],
+    [data-testid="stDataEditor"] .rdg,
+    [data-testid="stDataEditor"] [role="grid"],
+    [data-testid="stDataEditor"] [role="row"],
+    [data-testid="stDataEditor"] [role="gridcell"],
+    [data-testid="stDataEditor"] [role="columnheader"] {
+        background-color: white !important;
+    }
+    /* Header row: CH blue + white text */
     [data-testid="stDataEditor"] [role="columnheader"] {
         background-color: #1B4F9B !important;
         color: white !important;
     }
-    /* Stakeholder tracker — cell text: CH lilac */
+    /* Cell text: CH lilac */
     [data-testid="stDataEditor"] [role="gridcell"] {
         color: #7B68C8 !important;
     }
