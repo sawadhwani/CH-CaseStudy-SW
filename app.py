@@ -15,7 +15,19 @@ st.set_page_config(
 st.markdown("""
 <style>
     .block-container { padding-top: 1.5rem; }
-    .stMetric { background: #f8f9fa; border-radius: 8px; padding: 0.5rem; }
+    [data-testid="stMetric"] {
+        background-color: #1B4F9B;
+        border-radius: 8px;
+        padding: 0.75rem 1rem;
+    }
+    [data-testid="stMetricLabel"] p,
+    [data-testid="stMetricLabel"] {
+        color: white !important;
+        opacity: 0.85;
+    }
+    [data-testid="stMetricValue"] {
+        color: white !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
