@@ -1,4 +1,5 @@
 import os
+from datetime import date
 import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
@@ -43,7 +44,6 @@ def get_client() -> Anthropic:
 
 # ── Data ──────────────────────────────────────────────────────────────────────
 
-@st.cache_data
 def build_dataframe() -> pd.DataFrame:
     return pd.DataFrame([
         {
@@ -90,6 +90,205 @@ def compute_opportunity(abbr: str) -> dict:
 
 
 # ── Map ───────────────────────────────────────────────────────────────────────
+
+# ── News feed (static placeholder — production would pull from RSS/news API) ──
+
+NEWS_FEED = [
+    {
+        "tag": "Federal",
+        "tag_color": "#1B4F9B",
+        "title": "CMS Extends Telehealth Behavioral Health Flexibilities Through 2026",
+        "source": "CMS.gov",
+        "date": "Mar 15, 2026",
+        "summary": "CMS finalized extensions allowing audio-only IOP sessions and home-based originating sites for behavioral health through 2026, providing regulatory continuity for virtual IOP providers.",
+        "url": "https://www.cms.gov/newsroom/fact-sheets/cy-2025-medicare-hospital-outpatient-prospective-payment-system-ambulatory-surgical-center-payment",
+    },
+    {
+        "tag": "Oregon",
+        "tag_color": "#c0392b",
+        "title": "Oregon OHA Investigating Charlie Health Over Unlicensed Provider Billing",
+        "source": "The Lund Report",
+        "date": "Feb 2026",
+        "summary": "Oregon Health Authority is reviewing Charlie Health's operating agreement after finding the company billed $85M+ to Oregon Medicaid using providers not licensed in-state. Gov. Kotek called CH's public pressure campaign 'misleading.'",
+        "url": "https://www.thelundreport.org/content/kotek-calls-telehealth-pressure-campaign-misleading",
+    },
+    {
+        "tag": "Federal",
+        "tag_color": "#1B4F9B",
+        "title": "HR1 Reconciliation Bill Includes Medicaid Work Requirements Starting 2027",
+        "source": "KFF Health News",
+        "date": "Mar 10, 2026",
+        "summary": "House budget reconciliation proposes 80 hrs/month community engagement requirements for Medicaid expansion enrollees, potentially reducing the addressable Medicaid population for behavioral health providers.",
+        "url": "https://ccf.georgetown.edu/2025/11/10/the-future-of-acas-medicaid-expansion-what-do-changes-in-hr1-mean/",
+    },
+    {
+        "tag": "Connecticut",
+        "tag_color": "#7f8c8d",
+        "title": "Connecticut Out-of-State Telehealth Registration Expired With No Replacement",
+        "source": "CCHP",
+        "date": "Jan 2026",
+        "summary": "CT's temporary out-of-state telehealth provider registration expired June 30, 2025. No replacement legislation has been introduced, creating a significant licensing barrier for virtual-only providers like Charlie Health.",
+        "url": "https://www.cchpca.org/resources/state-telehealth-laws-and-reimbursement-policies-report-fall-2025/",
+    },
+    {
+        "tag": "Federal",
+        "tag_color": "#1B4F9B",
+        "title": "Only 23 States Have Full Medicaid Telehealth Payment Parity as of Fall 2025",
+        "source": "CCHP State Telehealth Report",
+        "date": "Nov 2025",
+        "summary": "CCHP's Fall 2025 report finds 23 states have implemented telehealth payment parity, 5 have parity with caveats, and 22 states have no parity requirement — directly affecting IOP reimbursement rates in key markets.",
+        "url": "https://www.cchpca.org/resources/state-telehealth-laws-and-reimbursement-policies-report-fall-2025/",
+    },
+]
+
+
+def render_newsfeed():
+    st.markdown("#### 📰 Live Newsfeed")
+    st.caption("Behavioral health & virtual IOP policy news · Static placeholder — production version pulls live from RSS")
+    for article in NEWS_FEED:
+        with st.container(border=True):
+            col_tag, col_meta = st.columns([1, 4])
+            col_tag.markdown(
+                f'<span style="background:{article["tag_color"]};color:white;'
+                f'padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;">'
+                f'{article["tag"]}</span>',
+                unsafe_allow_html=True,
+            )
+            col_meta.caption(f"{article['source']}  ·  {article['date']}")
+            st.markdown(f"**[{article['title']}]({article['url']})**")
+            st.caption(article["summary"])
+
+
+# ── Stakeholder tracker ───────────────────────────────────────────────────────
+
+_STAKEHOLDERS_DEFAULT = pd.DataFrame([
+    {
+        "Name": "Dr. Sarah Mitchell",
+        "Title": "Medical Director, Behavioral Health",
+        "Organization": "Oregon Health Authority",
+        "State": "OR",
+        "Last Contact": date(2025, 1, 14),
+        "Notes": "Discussed CH licensing concerns re: out-of-state providers. Follow up on OHA operating agreement review status and timeline.",
+    },
+    {
+        "Name": "James Kowalski",
+        "Title": "Director, Office of MaineCare Services",
+        "Organization": "Maine DHHS",
+        "State": "ME",
+        "Last Contact": date(2026, 2, 3),
+        "Notes": "Expressed strong interest in virtual IOP for rural populations. Requested CH capability deck and Medicaid credentialing timeline.",
+    },
+    {
+        "Name": "Rachel Torres",
+        "Title": "VP, Behavioral Health Strategy",
+        "Organization": "Blue Cross Blue Shield of Massachusetts",
+        "State": "MA",
+        "Last Contact": date(2026, 1, 15),
+        "Notes": "Contract renewal discussion in progress. Flagged interest in expanded adolescent IOP slots for Q3 2026.",
+    },
+    {
+        "Name": "Dr. Marcus Webb",
+        "Title": "Chief Medical Officer",
+        "Organization": "OhioRISE / Aetna Better Health of Ohio",
+        "State": "OH",
+        "Last Contact": date(2025, 12, 8),
+        "Notes": "OhioRISE expansion creating new referral opportunities for youth IOP. Follow up on updated billing codes effective Jan 2026.",
+    },
+    {
+        "Name": "Linda Chen",
+        "Title": "Director, Telehealth Policy",
+        "Organization": "California DHCS",
+        "State": "CA",
+        "Last Contact": date(2025, 10, 22),
+        "Notes": "CalAIM carve-in implementation update. Discussed prior auth requirements for virtual IOP under new managed care contracts.",
+    },
+    {
+        "Name": "Tom Harrington",
+        "Title": "Executive Director",
+        "Organization": "Kansas Behavioral Health Coalition",
+        "State": "KS",
+        "Last Contact": date(2024, 11, 14),
+        "Notes": "KanCare expansion still maturing. Tom is key connector to KS Medicaid MCOs. Schedule follow-up once CH evaluates KS entry timeline.",
+    },
+    {
+        "Name": "Dr. Priya Nair",
+        "Title": "Medical Director, Behavioral Health",
+        "Organization": "AHCCCS (Arizona Medicaid)",
+        "State": "AZ",
+        "Last Contact": date(2025, 4, 30),
+        "Notes": "Positive relationship. Discussed IOP reimbursement rate increases. Intro to AHCCCS network adequacy team pending.",
+    },
+    {
+        "Name": "Senator Michael Brooks",
+        "Title": "Chair, Senate Health Committee",
+        "Organization": "West Virginia Legislature",
+        "State": "WV",
+        "Last Contact": date(2024, 8, 22),
+        "Notes": "Supportive of virtual BH access given WV SUD crisis. CH not yet active in WV — follow up on entry feasibility and legislative support.",
+    },
+    {
+        "Name": "Jennifer Walsh",
+        "Title": "VP, Network Development",
+        "Organization": "ConnectiCare (CT Medicaid MCO)",
+        "State": "CT",
+        "Last Contact": date(2024, 9, 5),
+        "Notes": "CT out-of-state telehealth registration expired June 2025. Confirm current licensing pathway before re-engaging on network contracting.",
+    },
+    {
+        "Name": "Dr. Carlos Mendez",
+        "Title": "Associate Commissioner, Behavioral Health",
+        "Organization": "Texas Health & Human Services",
+        "State": "TX",
+        "Last Contact": date(2024, 6, 18),
+        "Notes": "TX commercial market remains primary opportunity given no Medicaid expansion. Discussed STAR Health youth BH contracts as potential entry point.",
+    },
+])
+
+
+def render_stakeholder_tracker():
+    st.markdown("#### 👥 Key Stakeholder Follow-ups")
+    st.caption("Last contact dates editable inline · 🔴 = no contact in 12+ months · Notes auto-save during session")
+
+    if "stakeholders" not in st.session_state:
+        st.session_state["stakeholders"] = _STAKEHOLDERS_DEFAULT.copy()
+
+    today = date.today()
+
+    def status(last_contact):
+        if pd.isna(last_contact):
+            return "⚪ Unknown"
+        days = (today - last_contact).days
+        if days > 365:
+            return f"🔴 {days // 30}mo ago"
+        if days > 180:
+            return f"🟡 {days // 30}mo ago"
+        return f"🟢 {days}d ago"
+
+    display = st.session_state["stakeholders"].copy()
+    display.insert(0, "Status", display["Last Contact"].apply(status))
+
+    edited = st.data_editor(
+        display,
+        column_config={
+            "Status":       st.column_config.TextColumn("Status",       disabled=True, width=130),
+            "Name":         st.column_config.TextColumn("Name",         disabled=True, width=170),
+            "Title":        st.column_config.TextColumn("Title",        disabled=True, width=220),
+            "Organization": st.column_config.TextColumn("Organization", disabled=True, width=220),
+            "State":        st.column_config.TextColumn("State",        disabled=True, width=60),
+            "Last Contact": st.column_config.DateColumn("Last Contact", format="MMM D, YYYY", width=130),
+            "Notes":        st.column_config.TextColumn("Notes",        width=320),
+        },
+        use_container_width=True,
+        hide_index=True,
+        num_rows="fixed",
+        key="stakeholder_editor",
+    )
+
+    # Persist edits (drop computed Status so it's recalculated fresh next render)
+    st.session_state["stakeholders"] = edited.drop(columns=["Status"])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 
 def build_map(df: pd.DataFrame, selected_abbr: str) -> go.Figure:
     fig = px.choropleth(
@@ -280,6 +479,10 @@ def main():
                 st.rerun()
 
         st.caption("Click a state or use the dropdown  |  Green = High (7–10)  |  Yellow = Moderate (4–6)  |  Red = Low (1–3)")
+        st.divider()
+        render_newsfeed()
+        st.divider()
+        render_stakeholder_tracker()
 
     with col_panel:
         d     = STATE_DATA[selected_abbr]
