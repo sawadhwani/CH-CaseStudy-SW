@@ -16,6 +16,8 @@ st.set_page_config(
 st.markdown("""
 <style>
     .block-container { padding-top: 1.5rem; }
+
+    /* Metric boxes — CH blue */
     [data-testid="stMetric"] {
         background-color: #1B4F9B;
         border-radius: 8px;
@@ -24,6 +26,16 @@ st.markdown("""
     [data-testid="stMetricLabel"] p,
     [data-testid="stMetricLabel"] { color: white !important; opacity: 0.85; }
     [data-testid="stMetricValue"] { color: white !important; }
+
+    /* Stakeholder tracker — header row: CH blue + white text */
+    [data-testid="stDataEditor"] [role="columnheader"] {
+        background-color: #1B4F9B !important;
+        color: white !important;
+    }
+    /* Stakeholder tracker — cell text: CH lilac */
+    [data-testid="stDataEditor"] [role="gridcell"] {
+        color: #7B68C8 !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
