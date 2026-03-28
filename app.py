@@ -309,6 +309,172 @@ def render_stakeholder_tracker():
     st.session_state["stakeholders"] = edited.drop(columns=["Status"])
 
 
+# ── Calendar sync + smart outreach ───────────────────────────────────────────
+
+CALENDAR_TRIPS = [
+    {
+        "state_abbr": "OK",
+        "destination": "Oklahoma City, OK",
+        "dates": "Apr 8–10, 2026",
+        "purpose": "Oklahoma Behavioral Health Association Annual Summit",
+    },
+    {
+        "state_abbr": "WV",
+        "destination": "Charleston, WV",
+        "dates": "Apr 22–23, 2026",
+        "purpose": "State Medicaid advisory board meeting — virtual care expansion",
+    },
+    {
+        "state_abbr": "ME",
+        "destination": "Portland, ME",
+        "dates": "May 5–6, 2026",
+        "purpose": "Northeast regional payer meetings — MaineCare network discussions",
+    },
+]
+
+# Suggested contacts per trip state (2 per state)
+# prior_contact=True means they appear in the stakeholder tracker
+TRIP_CONTACTS = {
+    "OK": [
+        {
+            "name": "Dr. Angela Porter",
+            "title": "Director, SoonerCare Behavioral Health",
+            "org": "Oklahoma Health Care Authority",
+            "prior_contact": False,
+        },
+        {
+            "name": "Mark Sullivan",
+            "title": "CEO",
+            "org": "Oklahoma Behavioral Health Association",
+            "prior_contact": False,
+        },
+    ],
+    "WV": [
+        {
+            "name": "Senator Michael Brooks",
+            "title": "Chair, Senate Health Committee",
+            "org": "West Virginia Legislature",
+            "prior_contact": True,   # exists in stakeholder tracker
+        },
+        {
+            "name": "Dr. Tamara Hess",
+            "title": "Commissioner, Bureau for Behavioral Health",
+            "org": "West Virginia DHHR",
+            "prior_contact": False,
+        },
+    ],
+    "ME": [
+        {
+            "name": "James Kowalski",
+            "title": "Director, Office of MaineCare Services",
+            "org": "Maine DHHS",
+            "prior_contact": True,   # exists in stakeholder tracker
+        },
+        {
+            "name": "Dr. Sarah Chen",
+            "title": "Medical Director, Behavioral Health",
+            "org": "Anthem Blue Cross Blue Shield of Maine",
+            "prior_contact": False,
+        },
+    ],
+}
+
+
+def get_stakeholder_last_contact(name: str) -> str | None:
+    """Look up last contact date for a name in the stakeholder tracker."""
+    if "stakeholders" not in st.session_state:
+        return None
+    df = st.session_state["stakeholders"]
+    match = df[df["Name"] == name]
+    if match.empty:
+        return None
+    last = match.iloc[0]["Last Contact"]
+    if pd.isna(last):
+        return None
+    return last.strftime("%b %d, %Y") if hasattr(last, "strftime") else str(last)
+
+
+def generate_outreach(contact: dict, trip: dict) -> str:
+    state_name = STATE_DATA[trip["state_abbr"]]["name"]
+    d = STATE_DATA[trip["state_abbr"]]
+    client = get_client()
+    prompt = f"""You are a Business Development associate at Charlie Health, a virtual behavioral health
+company specializing in Intensive Outpatient Programs (IOP) for teens and adults.
+
+Write a brief, warm outreach email to:
+  Name: {contact['name']}
+  Title: {contact['title']}
+  Organization: {contact['org']}
+  State: {state_name}
+
+Context: You are traveling to {trip['destination']} on {trip['dates']} for {trip['purpose']}.
+Charlie Health is {'currently active' if d['charlie_health_active'] else 'exploring entry'} in {state_name}.
+Medicaid status: {d['medicaid_status']}.
+
+Instructions:
+- Under 150 words
+- Professional but warm tone
+- Reference the specific trip/event naturally
+- One specific ask: a 20-minute meeting during the visit or a brief call beforehand
+- Do NOT use placeholders like [Your Name] — sign off as "The Charlie Health Team"
+- No subject line needed, just the email body"""
+
+    response = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=400,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return response.content[0].text
+
+
+def render_calendar_sync():
+    st.markdown("#### 📅 Travel & Smart Outreach")
+    st.caption("Synced from Google Calendar (static demo) · Outreach suggestions based on planned travel")
+
+    if "outreach_cache" not in st.session_state:
+        st.session_state["outreach_cache"] = {}
+
+    for trip in CALENDAR_TRIPS:
+        with st.container(border=True):
+            st.markdown(f"**{trip['destination']}** &nbsp;·&nbsp; {trip['dates']}")
+            st.caption(f"📌 {trip['purpose']}")
+
+            contacts = TRIP_CONTACTS.get(trip["state_abbr"], [])
+            for contact in contacts:
+                cache_key = f"{trip['state_abbr']}_{contact['name']}"
+                c_info, c_btn = st.columns([3, 1])
+
+                with c_info:
+                    if contact["prior_contact"]:
+                        last = get_stakeholder_last_contact(contact["name"])
+                        last_str = f"Last contact: {last}" if last else "In tracker — date unknown"
+                        st.markdown(f"🔵 **{contact['name']}**  \n{contact['title']}, {contact['org']}")
+                        st.caption(last_str)
+                    else:
+                        st.markdown(f"⚪ **{contact['name']}**  \n{contact['title']}, {contact['org']}")
+                        st.caption("No prior contact")
+
+                with c_btn:
+                    if cache_key in st.session_state["outreach_cache"]:
+                        if st.button("View Intro", key=f"view_{cache_key}", use_container_width=True):
+                            st.session_state[f"show_{cache_key}"] = not st.session_state.get(f"show_{cache_key}", False)
+                    else:
+                        if st.button("Outreach ✉", key=f"gen_{cache_key}",
+                                     type="primary" if not contact["prior_contact"] else "secondary",
+                                     use_container_width=True):
+                            with st.spinner("Drafting intro…"):
+                                st.session_state["outreach_cache"][cache_key] = generate_outreach(contact, trip)
+                                st.session_state[f"show_{cache_key}"] = True
+                                st.rerun()
+
+                if st.session_state.get(f"show_{cache_key}") and cache_key in st.session_state["outreach_cache"]:
+                    with st.expander("Draft email", expanded=True):
+                        st.markdown(st.session_state["outreach_cache"][cache_key])
+                        if st.button("Close", key=f"close_{cache_key}"):
+                            st.session_state[f"show_{cache_key}"] = False
+                            st.rerun()
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 
 def build_map(df: pd.DataFrame, selected_abbr: str) -> go.Figure:
@@ -502,8 +668,6 @@ def main():
         st.caption("Click a state or use the dropdown  |  Green = High (7–10)  |  Yellow = Moderate (4–6)  |  Red = Low (1–3)")
         st.divider()
         render_newsfeed()
-        st.divider()
-        render_stakeholder_tracker()
 
     with col_panel:
         d     = STATE_DATA[selected_abbr]
@@ -567,6 +731,14 @@ def main():
             st.info("Click **Generate Expansion Brief** for a strategic analysis of this state.")
 
         st.caption("Regulatory context is research-based but should be verified before use.")
+
+    # ── Bottom section: Stakeholder Tracker | Calendar Sync ──────────────────
+    st.divider()
+    bot_left, bot_right = st.columns(2, gap="large")
+    with bot_left:
+        render_stakeholder_tracker()
+    with bot_right:
+        render_calendar_sync()
 
 
 if __name__ == "__main__":
