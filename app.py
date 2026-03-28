@@ -85,20 +85,28 @@ def build_dataframe() -> pd.DataFrame:
 # Revenue: $12,000/Medicaid patient · $18,000/commercial patient
 # Sources: SAMHSA 2023 NSDUH, CMS IOP billing data, industry benchmarks
 
-def compute_opportunity(abbr: str) -> dict:
+def compute_opportunity(
+    abbr: str,
+    iop_pct: float = 0.15,
+    medicaid_rev_per: int = 12_000,
+    commercial_rev_per: int = 18_000,
+    medicaid_pct_expanded: float = 0.35,
+    medicaid_pct_nonexpanded: float = 0.20,
+) -> dict:
     d = STATE_DATA[abbr]
     adult_pop   = d["adult_population"]
     smi_rate    = d["smi_rate"]
     expanded    = d["medicaid_expanded"]
     partial     = (abbr == "WI")
 
-    addressable = adult_pop * smi_rate * 0.15
-    medicaid_pct = 0.35 if expanded else (0.25 if partial else 0.20)
+    addressable = adult_pop * smi_rate * iop_pct
+    medicaid_pct_partial = (medicaid_pct_expanded + medicaid_pct_nonexpanded) / 2
+    medicaid_pct = medicaid_pct_expanded if expanded else (medicaid_pct_partial if partial else medicaid_pct_nonexpanded)
 
     medicaid_pop    = round(addressable * medicaid_pct)
     commercial_pop  = round(addressable * (1 - medicaid_pct))
-    medicaid_rev    = medicaid_pop * 12_000
-    commercial_rev  = commercial_pop * 18_000
+    medicaid_rev    = medicaid_pop * medicaid_rev_per
+    commercial_rev  = commercial_pop * commercial_rev_per
 
     return {
         "addressable":    round(addressable),
@@ -567,9 +575,9 @@ Be direct and strategic. Write for a VP of Operations or Chief Growth Officer.
 Do not add any sections beyond those listed."""
 
 
-def generate_brief(state_abbr: str) -> str:
+def generate_brief(state_abbr: str, **model_params) -> str:
     d = STATE_DATA[state_abbr]
-    opp = compute_opportunity(state_abbr)
+    opp = compute_opportunity(state_abbr, **model_params)
     client = get_client()
     response = client.messages.create(
         model="claude-sonnet-4-6",
@@ -577,6 +585,52 @@ def generate_brief(state_abbr: str) -> str:
         messages=[{"role": "user", "content": build_prompt(d["name"], d, opp)}],
     )
     return response.content[0].text
+
+
+def generate_state_chat_response(state_abbr: str, user_message: str, opp: dict) -> None:
+    """Append user message to history, call Claude, append response. Mutates session state."""
+    d = STATE_DATA[state_abbr]
+    brief = st.session_state.brief_cache.get(state_abbr, "")
+    brief_section = f"\n\nGENERATED EXPANSION BRIEF:\n{brief}" if brief else ""
+
+    system = f"""You are a strategic analyst for Charlie Health, a virtual behavioral health company \
+specializing in Intensive Outpatient Programs (IOP) for teens and adults.
+
+STATE PROFILE: {d['name']}
+- Favorability Score: {d['favorability_score']}/10
+- Medicaid: {d['medicaid_status']}
+- Charlie Health Active: {'Yes' if d['charlie_health_active'] else 'No'}
+- CH Medicaid Reimbursement: {'Yes' if d['medicaid_covered'] else 'No'}
+- Telehealth Policy: {d['telehealth_policy']}
+- Regulatory Notes: {d['key_regulatory_notes']}
+- Recent Developments: {d['recent_developments']}
+
+OPPORTUNITY MODEL (current assumptions):
+- Addressable IOP patients: {opp['addressable']:,}
+- Medicaid patients: {opp['medicaid_pop']:,} (~${opp['medicaid_rev']/1e6:.1f}M revenue potential)
+- Commercial patients: {opp['commercial_pop']:,} (~${opp['commercial_rev']/1e6:.1f}M revenue potential)
+- Total revenue opportunity: ~${opp['total_rev']/1e6:.1f}M{brief_section}
+
+Answer questions about this state's expansion potential, regulatory landscape, and strategic approach. \
+Reason through "what if" scenarios using the data available. Be concise and actionable. \
+Write for a VP of Business Development or CEO — lead with the strategic implication."""
+
+    history_key = f"chat_{state_abbr}"
+    history = st.session_state.get(history_key, [])
+
+    client = get_client()
+    response = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=600,
+        system=system,
+        messages=history + [{"role": "user", "content": user_message}],
+    )
+    reply = response.content[0].text
+
+    st.session_state[history_key] = history + [
+        {"role": "user", "content": user_message},
+        {"role": "assistant", "content": reply},
+    ]
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -605,6 +659,43 @@ def main():
             st.session_state["api_key"] = key_input
         st.caption("Key stored in session only.")
 
+        st.divider()
+        with st.expander("Model Assumptions", expanded=False):
+            st.caption("Adjust the opportunity model parameters. Changes apply instantly across all states.")
+            iop_pct = st.slider(
+                "IOP-eligible share of SMI (%)", 5, 30, 15, 1,
+                format="%d%%",
+                help="Share of adults with serious mental illness (SMI) who require IOP-level care. SAMHSA default: ~15%.",
+            ) / 100
+            medicaid_rev_per = st.slider(
+                "Revenue per Medicaid patient ($)", 8_000, 20_000, 12_000, 500,
+                format="$%d",
+                help="Average net revenue per Medicaid IOP patient per episode. Industry benchmark: ~$12K.",
+            )
+            commercial_rev_per = st.slider(
+                "Revenue per commercial patient ($)", 12_000, 30_000, 18_000, 500,
+                format="$%d",
+                help="Average net revenue per commercial IOP patient per episode. Industry benchmark: ~$18K.",
+            )
+            medicaid_pct_expanded = st.slider(
+                "Medicaid % of addressable — expanded states (%)", 20, 55, 35, 1,
+                format="%d%%",
+                help="Share of IOP-addressable patients covered by Medicaid in expansion states.",
+            ) / 100
+            medicaid_pct_nonexpanded = st.slider(
+                "Medicaid % of addressable — non-expanded states (%)", 10, 35, 20, 1,
+                format="%d%%",
+                help="Share of IOP-addressable patients covered by Medicaid in non-expansion states.",
+            ) / 100
+
+        model_params = dict(
+            iop_pct=iop_pct,
+            medicaid_rev_per=medicaid_rev_per,
+            commercial_rev_per=commercial_rev_per,
+            medicaid_pct_expanded=medicaid_pct_expanded,
+            medicaid_pct_nonexpanded=medicaid_pct_nonexpanded,
+        )
+
     st.title("Charlie Health — State Expansion Intelligence")
     st.caption("AI-powered regulatory briefs for virtual IOP market expansion planning.")
 
@@ -621,7 +712,7 @@ def main():
     unexplored       = int((df["score"].ge(7) & df["ch_active"].eq("Not active")).sum())
     # Uncovered patient population = sum of IOP-addressable patients in inactive states
     uncovered_pop = sum(
-        round(STATE_DATA[abbr]["adult_population"] * STATE_DATA[abbr]["smi_rate"] * 0.15)
+        round(STATE_DATA[abbr]["adult_population"] * STATE_DATA[abbr]["smi_rate"] * iop_pct)
         for abbr, d in STATE_DATA.items()
         if not d["charlie_health_active"]
     )
@@ -673,7 +764,7 @@ def main():
         d     = STATE_DATA[selected_abbr]
         score = d["favorability_score"]
         score_icon = "🟢" if score >= 7 else "🟡" if score >= 4 else "🔴"
-        opp   = compute_opportunity(selected_abbr)
+        opp   = compute_opportunity(selected_abbr, **model_params)
 
         st.subheader(f"{selected_name}  {score_icon}")
 
@@ -695,8 +786,9 @@ def main():
         o3.metric("Total Revenue Opp",   fmt_rev(opp["total_rev"]),
                   delta=fmt_pop(opp["addressable"]) + " addressable pts", delta_color="off")
         st.caption(
-            "Model: adult pop × state SMI rate (SAMHSA 2023) × 15% IOP-eligible. "
-            "Revenue: $12K/Medicaid · $18K/commercial patient."
+            f"Model: adult pop × SMI rate (SAMHSA 2023) × {iop_pct*100:.0f}% IOP-eligible. "
+            f"Revenue: ${medicaid_rev_per/1000:.0f}K/Medicaid · ${commercial_rev_per/1000:.0f}K/commercial patient. "
+            "Adjust assumptions in sidebar."
         )
 
         st.divider()
@@ -723,7 +815,7 @@ def main():
 
         if generate:
             with st.spinner(f"Generating brief for {selected_name}…"):
-                st.session_state.brief_cache[selected_abbr] = generate_brief(selected_abbr)
+                st.session_state.brief_cache[selected_abbr] = generate_brief(selected_abbr, **model_params)
 
         if selected_abbr in st.session_state.brief_cache:
             st.markdown(st.session_state.brief_cache[selected_abbr])
@@ -731,6 +823,56 @@ def main():
             st.info("Click **Generate Expansion Brief** for a strategic analysis of this state.")
 
         st.caption("Regulatory context is research-based but should be verified before use.")
+
+        # ── Per-state chat ────────────────────────────────────────────────────
+        st.divider()
+        st.markdown("**Ask a follow-up question**")
+
+        history_key = f"chat_{selected_abbr}"
+        if history_key not in st.session_state:
+            st.session_state[history_key] = []
+
+        chat_history = st.session_state[history_key]
+
+        # Render existing conversation
+        for msg in chat_history:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+
+        # Suggested starter questions (shown only when chat is empty)
+        if not chat_history:
+            st.caption("Suggested questions:")
+            suggestions = [
+                "What would it take to enter this market?",
+                "What if Medicaid expanded here?",
+                "How does this compare to neighboring states?",
+                "What are the biggest regulatory risks?",
+            ]
+            sq1, sq2 = st.columns(2)
+            for i, q in enumerate(suggestions):
+                col = sq1 if i % 2 == 0 else sq2
+                if col.button(q, key=f"suggest_{selected_abbr}_{i}", use_container_width=True):
+                    with st.spinner("Thinking…"):
+                        generate_state_chat_response(selected_abbr, q, opp)
+                    st.rerun()
+
+        # Chat input via form (works inside columns)
+        with st.form(key=f"chat_form_{selected_abbr}", clear_on_submit=True):
+            user_q = st.text_input(
+                "Message",
+                placeholder=f"Ask anything about {selected_name}…",
+                label_visibility="collapsed",
+            )
+            send_cols = st.columns([3, 1])
+            submitted = send_cols[0].form_submit_button("Send", use_container_width=True)
+            if send_cols[1].form_submit_button("Clear chat", use_container_width=True):
+                st.session_state[history_key] = []
+                st.rerun()
+
+        if submitted and user_q:
+            with st.spinner("Thinking…"):
+                generate_state_chat_response(selected_abbr, user_q, opp)
+            st.rerun()
 
     # ── Bottom section: Stakeholder Tracker | Calendar Sync ──────────────────
     st.divider()
